@@ -97,9 +97,39 @@ local function getAnimeCover(animeTitle)
 	if response then
 		local data = require("mp.utils").parse_json(response)
 		if data and data.data and #data.data > 0 then
-			return data.data[1].images.jpg.image_url
+			return data.data[1].images.jpg.large_image_url
 		end
 	end
+
+	return nil
+end
+
+local function getAnilistCover(animeTitle)
+	local query = string.format([[
+    {
+        Media(search: "%s", type: ANIME) {
+            coverImage {
+                large
+                extraLarge
+            }
+        }
+    }
+    ]], animeTitle)
+    
+    local encodedQuery = query:gsub(" ", "%%20"):gsub("\n", "")
+
+	local cmd = string.format('curl -s -X POST -H "Content-Type: application/json" -d \'{"query":"%s"}\' "https://graphql.anilist.co"', encodedQuery)
+	local handle = io.popen(cmd)
+    local response = handle:read("*a")
+    handle:close()
+
+	 if response then
+        local data = require('mp.utils').parse_json(response)
+        if data and data.data and data.data.Media then
+            -- Try extraLarge first, fallback to large
+            return data.data.Media.coverImage.extraLarge or data.data.Media.coverImage.large
+        end
+    end
 
 	return nil
 end
@@ -216,8 +246,10 @@ local function main()
 				end
 			end
 		end
+
+		-- Set Cover as Anime Poster if title can be extracted from filename
 		local animeTitle = extractAnimeTitle(details)
-		local coverUrl = getAnimeCover(animeTitle)
+		local coverUrl = getAnilistCover(animeTitle)
 
 		if coverUrl then
 			largeImageKey = coverUrl
