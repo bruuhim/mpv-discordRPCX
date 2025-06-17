@@ -186,7 +186,7 @@ function discordRPC.updatePresence(presence)
     checkIntArg(presence.startTimestamp, 64, "presence.startTimestamp", func, true)
     checkIntArg(presence.endTimestamp, 64, "presence.endTimestamp", func, true)
 
-    checkStrArg(presence.largeImageKey, 31, "presence.largeImageKey", func, true)
+    -- checkStrArg(presence.largeImageKey, 31, "presence.largeImageKey", func, true)
     checkStrArg(presence.largeImageText, 127, "presence.largeImageText", func, true)
     checkStrArg(presence.smallImageKey, 31, "presence.smallImageKey", func, true)
     checkStrArg(presence.smallImageText, 127, "presence.smallImageText", func, true)

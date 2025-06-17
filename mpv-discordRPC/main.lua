@@ -7,6 +7,9 @@
 local options = require 'mp.options'
 local msg = require 'mp.msg'
 
+local animeCache = {}
+local currentAnimeTitle = nil
+
 -- set [options]
 local o = {
 	rpc_wrapper = "lua-discordRPC",
@@ -18,9 +21,9 @@ local o = {
 	-- value >= 1 second, if use lua-discordRPC,
 	-- value >= 3 second, if use pypresence (for the python3::asyncio process),
 	-- value <= 15 second, because discord-rpc updates every 15 seconds.
-	playlist_info = "yes",
+	playlist_info = "no",
 	-- Valid value to set `playlist_info`: (yes|no)
-	loop_info = "yes",
+	loop_info = "no",
 	-- Valid value to set `loop_info`: (yes|no)
 	cover_art = "yes",
 	-- Valid value to set `cover_art`: (yes|no)
@@ -52,8 +55,8 @@ local mpv_version = mp.get_property("mpv-version"):sub(5)
 local startTime = os.time(os.date("*t"))
 
 local function extractAnimeTitle(filename)
-	 -- Remove file extension
-    local nameOnly = filename:gsub("%.%w+$", "")
+	-- Remove file extension
+	local nameOnly = filename:gsub("%.%w+$", "")
 	local patterns = {
 		-- [Group] Title - Episode [Quality]
 		"^%[([^%]]+)%]%s*(.-)%s*%-%s*%d+[v%d]*%s*%[",
@@ -63,7 +66,7 @@ local function extractAnimeTitle(filename)
 		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(OVA|OAD|Movie|Special)",
 		-- Title - Episode (Quality)
 		"^(.-)%s*%-%s*%d+[v%d]*%s*%(",
-		-- Title - Episode [Quality]  
+		-- Title - Episode [Quality]
 		"^(.-)%s*%-%s*%d+[v%d]*%s*%[",
 		-- Title - Episode
 		"^(.-)%s*%-%s*%d+[v%d]*$",
@@ -73,63 +76,50 @@ local function extractAnimeTitle(filename)
 	for _, pattern in ipairs(patterns) do
 		local group, title = nameOnly:match(pattern)
 		if (title) then
-			title = title:gsub("^%s*(.-)%s*$", "%1")  -- Trim
-            title = title:gsub("_", " ")  -- Replace underscores
+			title = title:gsub("^%s*(.-)%s*$", "%1") -- Trim
+			title = title:gsub("_", " ")    -- Replace underscores
 			return title
 		elseif group and not title then
 			group = group:gsub("^%s*(.-)%s*$", "%1")
-            group = group:gsub("_", " ")
-            return group
+			group = group:gsub("_", " ")
+			return group
 		end
 	end
 
 	return nil
 end
 
-local function getAnimeCover(animeTitle)
+local function getAnimeData(animeTitle)
+	if not animeTitle or animeTitle == "" then
+		return nil
+	end
+
+	-- Check cache first
+	if animeCache[animeTitle] then
+		return animeCache[animeTitle]
+	end
+
 	local encodedTitle = animeTitle:gsub(" ", "%%20")
 	local cmd = string.format('curl -s "https://api.jikan.moe/v4/anime?q=%s&limit=1"', encodedTitle)
 
+
 	local handle = io.popen(cmd)
+	if not handle then
+		return nil
+	end
 	local response = handle:read("*a")
 	handle:close()
+
 
 	if response then
 		local data = require("mp.utils").parse_json(response)
 		if data and data.data and #data.data > 0 then
-			return data.data[1].images.jpg.large_image_url
+			-- Cache the result
+			animeCache[animeTitle] = data.data[1]
+			return data.data[1]
 		end
 	end
 
-	return nil
-end
-
-local function getAnilistCover(animeTitle)
-	local query = string.format([[
-    {
-        Media(search: "%s", type: ANIME) {
-            coverImage {
-                large
-                extraLarge
-            }
-        }
-    }
-    ]], animeTitle)
-    
-    local encodedQuery = query:gsub(" ", "%%20"):gsub("\n", "")
-
-	local cmd = string.format('curl -s -X POST -H "Content-Type: application/json" -d \'{"query":"%s"}\' "https://graphql.anilist.co"', encodedQuery)
-	local handle = io.popen(cmd)
-    local response = handle:read("*a")
-    handle:close()
-
-	 if response then
-        local data = require('mp.utils').parse_json(response)
-        if data and data.data and data.data.Media then
-            -- Try extraLarge first, fallback to large
-            return data.data.Media.coverImage.extraLarge or data.data.Media.coverImage.large
-        end
-    end
 
 	return nil
 end
@@ -152,6 +142,8 @@ local function main()
 	if details == nil then
 		details = "No file"
 	end
+	local animeTitle = extractAnimeTitle(details)
+	local animeData = getAnimeData(animeTitle)
 	-- set `state`, `smallImageKey`, and `smallImageText`
 	local state, smallImageKey, smallImageText
 	local idle = mp.get_property_bool("idle-active")
@@ -180,7 +172,8 @@ local function main()
 		-- set `playlist_info`
 		local playlist = ""
 		if o.playlist_info == "yes" then
-			playlist = (" - Playlist: [%s/%s]"):format(mp.get_property("playlist-pos-1"), mp.get_property("playlist-count"))
+			playlist = (" - Playlist: [%s/%s]"):format(mp.get_property("playlist-pos-1"),
+				mp.get_property("playlist-count"))
 		end
 		-- set `loop_info`
 		local loop = ""
@@ -248,11 +241,10 @@ local function main()
 		end
 
 		-- Set Cover as Anime Poster if title can be extracted from filename
-		local animeTitle = extractAnimeTitle(details)
-		local coverUrl = getAnilistCover(animeTitle)
-
-		if coverUrl then
-			largeImageKey = coverUrl
+		if animeData then
+			largeImageKey = animeData.images.webp.large_image_url
+			largeImageText = animeData.titles[5].title
+			details = animeTitle
 		end
 	end
 	-- streaming mode
@@ -266,16 +258,16 @@ local function main()
 		end
 		-- checking site: YouTube, Crunchyroll, SoundCloud, LISTEN.moe
 		if string.match(url, "www.youtube.com/watch%?v=([a-zA-Z0-9-_]+)&?.*$") ~= nil or string.match(url, "youtu.be/([a-zA-Z0-9-_]+)&?.*$") ~= nil then
-			largeImageKey = "youtube"	-- alternative "youtube_big" or "youtube-2"
+			largeImageKey = "youtube" -- alternative "youtube_big" or "youtube-2"
 			largeImageText = "YouTube"
 		elseif string.match(url, "www.crunchyroll.com/.+/.*-([0-9]+)??.*$") ~= nil then
-			largeImageKey = "crunchyroll"	-- alternative "crunchyroll_big"
+			largeImageKey = "crunchyroll" -- alternative "crunchyroll_big"
 			largeImageText = "Crunchyroll"
 		elseif string.match(url, "soundcloud.com/.+/.*$") ~= nil then
-			largeImageKey = "soundcloud"	-- alternative "soundcloud_big"
+			largeImageKey = "soundcloud" -- alternative "soundcloud_big"
 			largeImageText = "SoundCloud"
 		elseif string.match(url, "listen.moe/.*stream$") ~= nil or string.match(url, "listen.moe/.*opus$") ~= nil or string.match(url, "listen.moe/.*fallback$") ~= nil or string.match(url, "listen.moe/.*m3u$") ~= nil then
-			largeImageKey = "listen_moe"	-- alternative "listen_moe_big"
+			largeImageKey = "listen_moe" -- alternative "listen_moe_big"
 			largeImageText = string.match(url, "kpop") ~= nil and "LISTEN.moe - KPOP" or "LISTEN.moe - JPOP"
 		end
 	end
@@ -310,7 +302,7 @@ local function main()
 	-- run Rich Presence
 	if tostring(o.rpc_wrapper) == "lua-discordRPC" then
 		-- run Rich Presence with lua-discordRPC
-		local appId = "448016723057049601"
+		local appId = "1384495014406651965"
 		local RPC = require(o.rpc_wrapper)
 		RPC.initialize(appId, true)
 		if o.active == "yes" then
@@ -326,11 +318,13 @@ local function main()
 		pythonPath = mp.get_script_directory() .. "/" .. o.rpc_wrapper .. ".py"
 		lib = package.cpath:match("%p[\\|/]?%p(%a+)")
 		if lib == "dll" then
-			pythonPath = pythonPath:gsub("/","\\\\")
+			pythonPath = pythonPath:gsub("/", "\\\\")
 		end
 		-- run Rich Presence with pypresence
 		local todo = idle and "idle" or "not-idle"
-		local command = ('python "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s"'):format(pythonPath, todo, presence.state, presence.details, math.floor(startTime), math.floor(timeUp), presence.largeImageKey, presence.largeImageText, presence.smallImageKey, presence.smallImageText, o.periodic_timer)
+		local command = ('python "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s"'):format(pythonPath, todo,
+			presence.state, presence.details, math.floor(startTime), math.floor(timeUp), presence.largeImageKey,
+			presence.largeImageText, presence.smallImageKey, presence.smallImageText, o.periodic_timer)
 		mp.register_event('shutdown', function()
 			todo = "shutdown"
 			command = ('python "%s" "%s"'):format(pythonPath, todo)
@@ -365,7 +359,7 @@ mp.add_key_binding(o.key_toggle, "active-toggle", function()
 		mp.osd_message(("[%s] Status: %s"):format(script_info.name, status))
 		msg.info(string.format("Status: %s", status))
 	end,
-	{repeatable=false})
+	{ repeatable = false })
 
 -- run `main` function
 mp.add_periodic_timer(o.periodic_timer, main)
