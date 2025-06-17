@@ -20,8 +20,6 @@ local o = {
 	-- value <= 15 second, because discord-rpc updates every 15 seconds.
 	playlist_info = "yes",
 	-- Valid value to set `playlist_info`: (yes|no)
-	hide_url = "no",
-	-- Valid value to set `hide_url`: (yes|no)
 	loop_info = "yes",
 	-- Valid value to set `loop_info`: (yes|no)
 	cover_art = "yes",
@@ -52,6 +50,59 @@ local mpv_version = mp.get_property("mpv-version"):sub(5)
 
 -- set `startTime`
 local startTime = os.time(os.date("*t"))
+
+local function extractAnimeTitle(filename)
+	 -- Remove file extension
+    local nameOnly = filename:gsub("%.%w+$", "")
+	local patterns = {
+		-- [Group] Title - Episode [Quality]
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*%d+[v%d]*%s*%[",
+		-- [Group] Title - Episode
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*%d+[v%d]*",
+		-- [Group] Title - Special
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(OVA|OAD|Movie|Special)",
+		-- Title - Episode (Quality)
+		"^(.-)%s*%-%s*%d+[v%d]*%s*%(",
+		-- Title - Episode [Quality]  
+		"^(.-)%s*%-%s*%d+[v%d]*%s*%[",
+		-- Title - Episode
+		"^(.-)%s*%-%s*%d+[v%d]*$",
+		-- Title - Special
+		"^(.-)%s*%-%s*(OVA|OAD|Movie|Special)"
+	}
+	for _, pattern in ipairs(patterns) do
+		local group, title = nameOnly:match(pattern)
+		if (title) then
+			title = title:gsub("^%s*(.-)%s*$", "%1")  -- Trim
+            title = title:gsub("_", " ")  -- Replace underscores
+			return title
+		elseif group and not title then
+			group = group:gsub("^%s*(.-)%s*$", "%1")
+            group = group:gsub("_", " ")
+            return group
+		end
+	end
+
+	return nil
+end
+
+local function getAnimeCover(animeTitle)
+	local encodedTitle = animeTitle:gsub(" ", "%%20")
+	local cmd = string.format('curl -s "https://api.jikan.moe/v4/anime?q=%s&limit=1"', encodedTitle)
+
+	local handle = io.popen(cmd)
+	local response = handle:read("*a")
+	handle:close()
+
+	if response then
+		local data = require("mp.utils").parse_json(response)
+		if data and data.data and #data.data > 0 then
+			return data.data[1].images.jpg.image_url
+		end
+	end
+
+	return nil
+end
 
 local function main()
 	-- set `details`
@@ -165,18 +216,21 @@ local function main()
 				end
 			end
 		end
+		local animeTitle = extractAnimeTitle(details)
+		local coverUrl = getAnimeCover(animeTitle)
+
+		if coverUrl then
+			largeImageKey = coverUrl
+		end
 	end
 	-- streaming mode
 	local url = mp.get_property("path")
 	local stream = mp.get_property("stream-path")
 	if url ~= nil then
 		-- checking protocol: http, https
-		if string.match(url, "^https?://.*") ~= nil and o.hide_url == "no"  then
+		if string.match(url, "^https?://.*") ~= nil then
 			largeImageKey = "mpv_stream"
 			largeImageText = url
-		elseif o.hide_url == "yes" then
-			largeImageKey = "mpv_stream"
-			-- will use mpv_version set previously
 		end
 		-- checking site: YouTube, Crunchyroll, SoundCloud, LISTEN.moe
 		if string.match(url, "www.youtube.com/watch%?v=([a-zA-Z0-9-_]+)&?.*$") ~= nil or string.match(url, "youtu.be/([a-zA-Z0-9-_]+)&?.*$") ~= nil then
@@ -244,10 +298,10 @@ local function main()
 		end
 		-- run Rich Presence with pypresence
 		local todo = idle and "idle" or "not-idle"
-		local command = ('python3 "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s"'):format(pythonPath, todo, presence.state, presence.details, math.floor(startTime), math.floor(timeUp), presence.largeImageKey, presence.largeImageText, presence.smallImageKey, presence.smallImageText, o.periodic_timer)
+		local command = ('python "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s"'):format(pythonPath, todo, presence.state, presence.details, math.floor(startTime), math.floor(timeUp), presence.largeImageKey, presence.largeImageText, presence.smallImageKey, presence.smallImageText, o.periodic_timer)
 		mp.register_event('shutdown', function()
 			todo = "shutdown"
-			command = ('python3 "%s" "%s"'):format(pythonPath, todo)
+			command = ('python "%s" "%s"'):format(pythonPath, todo)
 			io.popen(command)
 			os.exit()
 		end)
