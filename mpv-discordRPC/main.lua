@@ -8,6 +8,8 @@ local options = require 'mp.options'
 local msg = require 'mp.msg'
 
 local animeCache = {}
+local lastAnimeTitle = nil
+local urlDecodedFilename = nil
 
 -- set [options]
 local o = {
@@ -36,6 +38,9 @@ local o = {
 	-- Valid value to set `key_toggle`: same as valid value for mpv key binding.
 	-- You also can set it in input.conf by adding this next line (without double quote).
 	-- "D script-binding mpv_discordRPC/active-toggle"
+	anime_scraping = "yes"
+	-- Enables scraping of anime cover art, titles, and genres from Jikan API
+	-- Valid values to set `anime_scraping`: (yes|no)
 }
 options.read_options(o)
 
@@ -53,40 +58,67 @@ local mpv_version = mp.get_property("mpv-version"):sub(5)
 -- set `startTime`
 local startTime = os.time(os.date("*t"))
 
-local function extractAnimeTitle(filename)
+local function extractAnimeInfo(filename)
 	-- Remove file extension
 	local nameOnly = filename:gsub("%.%w+$", "")
 	local patterns = {
 		-- [Group] Title - Episode [Quality]
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*%d+[v%d]*%s*%[",
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(%d+[v%d]*)%s*%[",
+		-- [Group] Title Episode [Quality] (no dash - like Beatrice-Raws)
+		"^%[([^%]]+)%]%s*(.-)%s+(%d+[v%d]*)%s*%[",
+		-- [Group] Title - Episode (Quality)
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(%d+[v%d]*)%s*%(",
+		-- [Group] Title Episode (Quality) (no dash)
+		"^%[([^%]]+)%]%s*(.-)%s+(%d+[v%d]*)%s*%(",
 		-- [Group] Title - Episode
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*%d+[v%d]*",
-		-- [Group] Title - Special
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(OVA|OAD|Movie|Special)",
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(%d+[v%d]*)",
+		-- [Group] Title Episode (no dash)
+		"^%[([^%]]+)%]%s*(.-)%s+(%d+[v%d]*)$",
+		-- [Group] Title - Special (combined: OVA|OAD|ONA|Movie|Special)
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(OVA|OAD|ONA|Movie|Special)",
+		-- [Group] Title Special (no dash, combined: OVA|OAD|ONA|Movie|Special)
+		"^%[([^%]]+)%]%s*(.-)%s+(OVA|OAD|ONA|Movie|Special)",
 		-- Title - Episode (Quality)
-		"^(.-)%s*%-%s*%d+[v%d]*%s*%(",
+		"^(.-)%s*%-%s*(%d+[v%d]*)%s*%(",
+		-- Title Episode (Quality) (no dash)
+		"^(.-)%s+(%d+[v%d]*)%s*%(",
 		-- Title - Episode [Quality]
-		"^(.-)%s*%-%s*%d+[v%d]*%s*%[",
+		"^(.-)%s*%-%s*(%d+[v%d]*)%s*%[",
+		-- Title Episode [Quality] (no dash)
+		"^(.-)%s+(%d+[v%d]*)%s*%[",
 		-- Title - Episode
-		"^(.-)%s*%-%s*%d+[v%d]*$",
-		-- Title - Special
-		"^(.-)%s*%-%s*(OVA|OAD|Movie|Special)"
+		"^(.-)%s*%-%s*(%d+[v%d]*)$",
+		-- Title Episode (no dash)
+		"^(.-)%s+(%d+[v%d]*)$",
+		-- Title - Special (combined: OVA|OAD|ONA|Movie|Special)
+		"^(.-)%s*%-%s*(OVA|OAD|ONA|Movie|Special)"
 	}
+
 	for _, pattern in ipairs(patterns) do
-		local group, title = nameOnly:match(pattern)
-		if (title) then
+		local group, title, episode = nameOnly:match(pattern)
+
+		-- Handle patterns with release groups (3 captures)
+		if title and episode then
 			title = title:gsub("^%s*(.-)%s*$", "%1") -- Trim
 			title = title:gsub("_", " ")    -- Replace underscores
-			return title
-		elseif group and not title then
+			return {
+				title = title,
+				episode = episode
+			}
+			-- Handle patterns without release groups (2 captures)
+		elseif group and title and not episode then
 			group = group:gsub("^%s*(.-)%s*$", "%1")
 			group = group:gsub("_", " ")
-			return group
+			return {
+				title = group,
+				episode = title -- In this case, 'title' variable contains the episode
+			}
 		end
 	end
 
 	return nil
 end
+
 
 local function getAnimeData(animeTitle)
 	if not animeTitle or animeTitle == "" then
@@ -111,12 +143,21 @@ local function getAnimeData(animeTitle)
 	if result.status == 0 and result.stdout then
 		local data = utils.parse_json(result.stdout)
 		if data and data.data and #data.data > 0 then
+			lastAnimeTitle = animeTitle
 			animeCache[animeTitle] = data.data[1]
 			return data.data[1]
 		end
 	end
 
 	return nil
+end
+
+local function urlDecode(str)
+	str = str:gsub("+", " ")
+	str = str:gsub("%%(%x%x)", function(hex)
+		return string.char(tonumber(hex, 16))
+	end)
+	return str
 end
 
 local function main()
@@ -137,8 +178,6 @@ local function main()
 	if details == nil then
 		details = "No file"
 	end
-	local animeTitle = extractAnimeTitle(details)
-	local animeData = getAnimeData(animeTitle)
 	-- set `state`, `smallImageKey`, and `smallImageText`
 	local state, smallImageKey, smallImageText
 	local idle = mp.get_property_bool("idle-active")
@@ -234,13 +273,6 @@ local function main()
 				end
 			end
 		end
-
-		-- Set Cover as Anime Poster if title can be extracted from filename
-		if animeData then
-			largeImageKey = animeData.images.webp.large_image_url
-			largeImageText = animeData.titles[5].title
-			details = animeTitle
-		end
 	end
 	-- streaming mode
 	local url = mp.get_property("path")
@@ -249,7 +281,18 @@ local function main()
 		-- checking protocol: http, https
 		if string.match(url, "^https?://.*") ~= nil then
 			largeImageKey = "mpv_stream"
-			largeImageText = url
+			if string.len(url) < 128 then
+				largeImageText = url
+			end
+			if o.anime_scraping == "yes" and (string.match(url, "%.mkv$") or string.match(url, "%.mp4$") or string.match(url, "%.avi$") or string.match(url, "%.webm$")) then
+				local encodedFilename = lastAnimeTitle or url:match("([^/]+)$")
+
+				if encodedFilename ~= lastAnimeTitle then
+					urlDecodedFilename = urlDecode(encodedFilename)
+
+					lastAnimeTitle = extractAnimeInfo(urlDecodedFilename).title
+				end
+			end
 		end
 		-- checking site: YouTube, Crunchyroll, SoundCloud, LISTEN.moe
 		if string.match(url, "www.youtube.com/watch%?v=([a-zA-Z0-9-_]+)&?.*$") ~= nil or string.match(url, "youtu.be/([a-zA-Z0-9-_]+)&?.*$") ~= nil then
@@ -264,6 +307,27 @@ local function main()
 		elseif string.match(url, "listen.moe/.*stream$") ~= nil or string.match(url, "listen.moe/.*opus$") ~= nil or string.match(url, "listen.moe/.*fallback$") ~= nil or string.match(url, "listen.moe/.*m3u$") ~= nil then
 			largeImageKey = "listen_moe" -- alternative "listen_moe_big"
 			largeImageText = string.match(url, "kpop") ~= nil and "LISTEN.moe - KPOP" or "LISTEN.moe - JPOP"
+		end
+	end
+	if o.anime_scraping == "yes" then
+		-- Set Cover as Anime Poster if title can be extracted from filename
+		local animeData = nil
+		local animeInfo = extractAnimeInfo(urlDecodedFilename or details)
+		if animeInfo and animeInfo.title then
+			animeData = getAnimeData(animeInfo.title)
+		end
+		if animeInfo and animeData and animeData.images then
+			largeImageKey = animeData.images.webp.large_image_url or animeData.images.jpg.large_image_url
+			largeImageText = animeData.title_english or animeData.title
+			details = string.format("%s - %s", animeInfo.title, animeInfo.episode)
+			if animeData.genres and animeData.genres[1] and animeData.genres[2] and animeData.genres[3] then
+				state = string.format("Genre: %s, %s, %s", animeData.genres[1].name, animeData.genres[2].name,
+					animeData.genres[3].name)
+			elseif animeData.genres and animeData.genres[1] and animeData.genres[2] then
+				state = string.format("Genre: %s, %s", animeData.genres[1].name, animeData.genres[2].name)
+			elseif animeData.genres and animeData.genres[1] then
+				state = string.format("Genre: %s", animeData.genres[1].name)
+			end
 		end
 	end
 	-- set `presence`
@@ -297,7 +361,7 @@ local function main()
 	-- run Rich Presence
 	if tostring(o.rpc_wrapper) == "lua-discordRPC" then
 		-- run Rich Presence with lua-discordRPC
-		local appId = "1384495014406651965"
+		local appId = "448016723057049601"
 		local RPC = require(o.rpc_wrapper)
 		RPC.initialize(appId, true)
 		if o.active == "yes" then
