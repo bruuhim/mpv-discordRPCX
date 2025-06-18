@@ -8,7 +8,6 @@ local options = require 'mp.options'
 local msg = require 'mp.msg'
 
 local animeCache = {}
-local currentAnimeTitle = nil
 
 -- set [options]
 local o = {
@@ -99,27 +98,23 @@ local function getAnimeData(animeTitle)
 		return animeCache[animeTitle]
 	end
 
+	local utils = require "mp.utils"
+
 	local encodedTitle = animeTitle:gsub(" ", "%%20")
-	local cmd = string.format('curl -s "https://api.jikan.moe/v4/anime?q=%s&limit=1"', encodedTitle)
+	local url = string.format("https://api.jikan.moe/v4/anime?q=%s&limit=1", encodedTitle)
+	local result = utils.subprocess({
+		args = { "curl", "-s", url },
+		capture_stdout = true,
+		capture_stderr = true
+	})
 
-
-	local handle = io.popen(cmd)
-	if not handle then
-		return nil
-	end
-	local response = handle:read("*a")
-	handle:close()
-
-
-	if response then
-		local data = require("mp.utils").parse_json(response)
+	if result.status == 0 and result.stdout then
+		local data = utils.parse_json(result.stdout)
 		if data and data.data and #data.data > 0 then
-			-- Cache the result
 			animeCache[animeTitle] = data.data[1]
 			return data.data[1]
 		end
 	end
-
 
 	return nil
 end
