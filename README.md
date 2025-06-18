@@ -26,7 +26,7 @@ For more description read below.
 | Crunchyroll paused  | ![Crunchyroll paused](images/paused_crunchyroll.png)
 | SoundCloud playing | ![SoundCloud playing](images/playing_soundcloud.png)
 | LISTEN.moe paused  | ![LISTEN.moe paused](images/paused_listen_moe.png)
-| Anime playing | ![Anime playing](images/anime_playing.png)
+| Anime playing | ![Anime playing](images/playing_anime.png)
 
 ---
 
