@@ -19,7 +19,7 @@ if exist "%mpv_dir%" (
 		goto set_mpv_dir
 	)
 ) else (
-	echo Please try again, not a invalid directory.
+	echo Please try again, not a valid directory.
 	echo:
 	goto set_mpv_dir
 )
