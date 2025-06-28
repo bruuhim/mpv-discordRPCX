@@ -62,6 +62,18 @@ local function extractAnimeInfo(filename)
 	-- Remove file extension
 	local nameOnly = filename:gsub("%.%w+$", "")
 	local patterns = {
+		-- [Group] Title - S##E## [Quality]
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%[",
+		-- [Group] Title S##E## [Quality] (no dash)
+		"^%[([^%]]+)%]%s*(.-)%s+(S%d+E%d+[v%d]*)%s*%[",
+		-- [Group] Title - S##E## (Quality)
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%(",
+		-- [Group] Title S##E## (Quality) (no dash)
+		"^%[([^%]]+)%]%s*(.-)%s+(S%d+E%d+[v%d]*)%s*%(",
+		-- [Group] Title - S##E##
+		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(S%d+E%d+[v%d]*)",
+		-- [Group] Title S##E## (no dash)
+		"^%[([^%]]+)%]%s*(.-)%s+(S%d+E%d+[v%d]*)$",
 		-- [Group] Title - Episode [Quality]
 		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(%d+[v%d]*)%s*%[",
 		-- [Group] Title Episode [Quality] (no dash - like Beatrice-Raws)
@@ -78,6 +90,18 @@ local function extractAnimeInfo(filename)
 		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(OVA|OAD|ONA|Movie|Special)",
 		-- [Group] Title Special (no dash, combined: OVA|OAD|ONA|Movie|Special)
 		"^%[([^%]]+)%]%s*(.-)%s+(OVA|OAD|ONA|Movie|Special)",
+		-- Title - S##E## [Quality]
+		"^(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%[",
+		-- Title S##E## [Quality] (no dash)
+		"^(.-)%s+(S%d+E%d+[v%d]*)%s*%[",
+		-- Title - S##E## (Quality)
+		"^(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%(",
+		-- Title S##E## (Quality) (no dash)
+		"^(.-)%s+(S%d+E%d+[v%d]*)%s*%(",
+		-- Title - S##E##
+		"^(.-)%s*%-%s*(S%d+E%d+[v%d]*)$",
+		-- Title S##E## (no dash)
+		"^(.-)%s+(S%d+E%d+[v%d]*)$",
 		-- Title - Episode (Quality)
 		"^(.-)%s*%-%s*(%d+[v%d]*)%s*%(",
 		-- Title Episode (Quality) (no dash)
@@ -100,7 +124,7 @@ local function extractAnimeInfo(filename)
 		-- Handle patterns with release groups (3 captures)
 		if title and episode then
 			title = title:gsub("^%s*(.-)%s*$", "%1") -- Trim
-			title = title:gsub("_", " ")    -- Replace underscores
+			title = title:gsub("_", " ")          -- Replace underscores
 			return {
 				title = title,
 				episode = episode
