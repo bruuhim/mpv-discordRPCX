@@ -9,11 +9,10 @@ Forked from <a href="https://github.com/cniw/mpv-discordRPC">mpv-discordRPC</a>
 </h4>
 
 <p align="center">
-  <a href="#foreword">Foreword</a> •
+  <a href="#credits">Credits</a> •
   <a href="#key-features">Key Features</a> •
   <a href="#how-to-use">How To Use</a> •
   <a href="#configuration">Configuration</a> •
-  <a href="#contact-me">Contact Me</a> •
   <a href="#license">License</a>
 </p>
 
@@ -22,11 +21,24 @@ Forked from <a href="https://github.com/cniw/mpv-discordRPC">mpv-discordRPC</a>
   <img src="/images/discordRPC_blackswan.png" width=400 hspace="10">
 </p>
 
-## Foreword
+## Credits
 
-The majority of the work in this fork comes from the original repo, credits to [cniw](https://github.com/cniw) for building a functional plugin.
-However I saw that the plugin wasnt actively being maintained and was missing a few features that would make it even better so I decided to maintain this fork.
-If you have any suggestions or feature requests please open an issue or contact me on Discord : `knuckles_was_taken`
+This project is a fork of [ujjwal-dev23/mpv-discordRPC](https://github.com/ujjwal-dev23), the original author who developed the core codebase and maintained the plugin after forking from [cniw/mpv-discordRPC](https://github.com/cniw/mpv-discordRPC).
+
+**Bruuhim (Maintainer):** Performed major modifications and improvements, including:
+
+- **Automatic Anime Title Detection:** Extracts and cleans anime titles from parent folder names for accurate API lookups.
+- **Episode Extraction:** Reliably parses episode numbers and titles from video filenames (e.g., "03 - Everyday Life Under Dangerous Circumstances").
+- **Enhanced Cover Art:** Improved fetching of official anime posters via Jikan API metadata, prioritizing anime-matched images.
+- **Debug Logging:** Added comprehensive terminal output for troubleshooting extraction and API calls.
+- **Stability Fixes:** Resolved Lua pattern matching errors and enhanced script reliability.
+
+**Changelog:**
+- v1.4.2: Lua pattern fixes, debug logging, improved anime detection (2023-2025).
+- v1.4.1: Original release by ujjwal-dev23 with initial anime scraping.
+- Initial: Based on cniw's plugin.
+
+For feature requests or issues, please open a GitHub issue on this repository.
 
 ## Key Features
 
@@ -101,13 +113,6 @@ anime_scraping=yes
 # Enables scraping of anime cover art, titles, and genres from Jikan API
 # Valid values to set `anime_scraping`: (yes|no)
 ```
-
-## Contact Me
-
-- Discord : `knuckles_was_taken`
-- Discord Server (in case direct DM doesnt work) : https://discord.gg/dT4teRN
-- Email : ujjwalkandera23@tutamail.com
-- Github : https://github.com/ujjwal-dev23
 
 ## You may also like...
 

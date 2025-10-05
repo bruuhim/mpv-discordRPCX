@@ -58,89 +58,68 @@ local mpv_version = mp.get_property("mpv-version"):sub(5)
 -- set `startTime`
 local startTime = os.time(os.date("*t"))
 
-local function extractAnimeInfo(filename)
-	-- Remove file extension
-	local nameOnly = filename:gsub("%.%w+$", "")
+-- Extract and clean anime title from the parent folder name, removing unwanted tags
+local function extractAnimeTitleFromFolder(path)
+	if not path then return nil end
+	-- Get directory of the file: extract parent folder from path
+	local dir = path:match("(.*/)") or path:match("(.*\\)") or ""  -- folder name extraction
+	if dir == "" then return nil end
+	-- Remove trailing slash and get parent folder name
+	local parentFolder = dir:gsub("[/\\]$", ""):match("([^/\\]+)$")
+	if not parentFolder then return nil end
+	local nameOnly = parentFolder
+	-- Patterns to clean anime title: remove group tags, quality flags, bracketed info
 	local patterns = {
-		-- [Group] Title - S##E## [Quality]
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%[",
-		-- [Group] Title S##E## [Quality] (no dash)
-		"^%[([^%]]+)%]%s*(.-)%s+(S%d+E%d+[v%d]*)%s*%[",
-		-- [Group] Title - S##E## (Quality)
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%(",
-		-- [Group] Title S##E## (Quality) (no dash)
-		"^%[([^%]]+)%]%s*(.-)%s+(S%d+E%d+[v%d]*)%s*%(",
-		-- [Group] Title - S##E##
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(S%d+E%d+[v%d]*)",
-		-- [Group] Title S##E## (no dash)
-		"^%[([^%]]+)%]%s*(.-)%s+(S%d+E%d+[v%d]*)$",
-		-- [Group] Title - Episode [Quality]
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(%d+[v%d]*)%s*%[",
-		-- [Group] Title Episode [Quality] (no dash - like Beatrice-Raws)
-		"^%[([^%]]+)%]%s*(.-)%s+(%d+[v%d]*)%s*%[",
-		-- [Group] Title - Episode (Quality)
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(%d+[v%d]*)%s*%(",
-		-- [Group] Title Episode (Quality) (no dash)
-		"^%[([^%]]+)%]%s*(.-)%s+(%d+[v%d]*)%s*%(",
-		-- [Group] Title - Episode
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(%d+[v%d]*)",
-		-- [Group] Title Episode (no dash)
-		"^%[([^%]]+)%]%s*(.-)%s+(%d+[v%d]*)$",
-		-- [Group] Title - Special (combined: OVA|OAD|ONA|Movie|Special)
-		"^%[([^%]]+)%]%s*(.-)%s*%-%s*(OVA|OAD|ONA|Movie|Special)",
-		-- [Group] Title Special (no dash, combined: OVA|OAD|ONA|Movie|Special)
-		"^%[([^%]]+)%]%s*(.-)%s+(OVA|OAD|ONA|Movie|Special)",
-		-- Title - S##E## [Quality]
-		"^(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%[",
-		-- Title S##E## [Quality] (no dash)
-		"^(.-)%s+(S%d+E%d+[v%d]*)%s*%[",
-		-- Title - S##E## (Quality)
-		"^(.-)%s*%-%s*(S%d+E%d+[v%d]*)%s*%(",
-		-- Title S##E## (Quality) (no dash)
-		"^(.-)%s+(S%d+E%d+[v%d]*)%s*%(",
-		-- Title - S##E##
-		"^(.-)%s*%-%s*(S%d+E%d+[v%d]*)$",
-		-- Title S##E## (no dash)
-		"^(.-)%s+(S%d+E%d+[v%d]*)$",
-		-- Title - Episode (Quality)
-		"^(.-)%s*%-%s*(%d+[v%d]*)%s*%(",
-		-- Title Episode (Quality) (no dash)
-		"^(.-)%s+(%d+[v%d]*)%s*%(",
-		-- Title - Episode [Quality]
-		"^(.-)%s*%-%s*(%d+[v%d]*)%s*%[",
-		-- Title Episode [Quality] (no dash)
-		"^(.-)%s+(%d+[v%d]*)%s*%[",
-		-- Title - Episode
-		"^(.-)%s*%-%s*(%d+[v%d]*)$",
-		-- Title Episode (no dash)
-		"^(.-)%s+(%d+[v%d]*)$",
-		-- Title - Special (combined: OVA|OAD|ONA|Movie|Special)
-		"^(.-)%s*%-%s*(OVA|OAD|ONA|Movie|Special)"
+		"^%[([^%]]+)%]%s*(.-)$",     -- Remove [Group] from start
+		"^(.-)%s*%[(.+)%]$",         -- Remove [Info] from end
+		"^%[(.-)%]$",                -- Entirely bracketed
+		"(.*)[%[%(]%d+p%x*[%).]*(.*)", -- Remove resolution like [1080p] or (720p)
+		"(.*)[%[%(].*UNCENSORED?.*[%]%)](.*)", -- Remove Uncensored tags
+		"(.*)%s+%b%%s+(.*)"        -- Remove other enclosed tags
 	}
-
+	local cleaned = nameOnly
 	for _, pattern in ipairs(patterns) do
-		local group, title, episode = nameOnly:match(pattern)
-
-		-- Handle patterns with release groups (3 captures)
-		if title and episode then
-			title = title:gsub("^%s*(.-)%s*$", "%1") -- Trim
-			title = title:gsub("_", " ")          -- Replace underscores
-			return {
-				title = title,
-				episode = episode
-			}
-			-- Handle patterns without release groups (2 captures)
-		elseif group and title and not episode then
-			group = group:gsub("^%s*(.-)%s*$", "%1")
-			group = group:gsub("_", " ")
-			return {
-				title = group,
-				episode = title -- In this case, 'title' variable contains the episode
-			}
+		local part1, part2 = nameOnly:match(pattern)
+		if part1 then
+			cleaned = part1 .. (part2 or "")
+			break
 		end
 	end
+	-- Final cleanup
+	cleaned = cleaned:gsub("^%s*(.-)%s*$", "%1"):gsub("_", " "):gsub("[%[%(].*[%)%]]", ""):gsub("%s+", " ")
+	return cleaned ~= "" and cleaned or nil
+end
 
-	return nil
+-- Extract episode info from the filename, format as "Episode XX" or "Episode XX - Title"
+local function extractEpisodeFromFilename(filename)
+	-- Remove file extension
+	local name = filename:gsub("%.%w+$", "")
+	-- Pattern 1: XX - Title (e.g., "03 - Everyday Life Under Dangerous Circumstances")
+	local epNum, epTitle = name:match("%s*(%d+[v%d]*)%s*%-%s*(.-)%s*$")
+	if epNum then
+		epTitle = epTitle:gsub("^%s*", ""):gsub("%s*$", "")
+		local episode = "Episode " .. epNum
+		if epTitle and epTitle ~= "" then
+			episode = episode .. " - " .. epTitle
+		end
+		return episode
+	end
+	-- Pattern 2: SXXEXX - Title (e.g., "S01E03 - Episode Name")
+	local epSeas = name:match("(S%d+E%d+[v%d]*)")
+	if epSeas then
+		local episode = "Episode " .. epSeas
+		local titleMatch = name:match("%-%s*(.-)%s*$")
+		if titleMatch and titleMatch:match("%S") then
+			episode = episode .. " - " .. titleMatch:gsub("^%s*", "")
+		end
+		return episode
+	end
+	-- Pattern 3: Just number (e.g., "01")
+	local justNum = name:match("^%s*(%d+[v%d]*)%s*$")
+	if justNum then
+		return "Episode " .. justNum
+	end
+	return "No episode info"
 end
 
 
@@ -255,9 +234,9 @@ local function main()
 		smallImageText = ("%s%s%s"):format(smallImageText, playlist, loop)
 	end
 	-- set time
-	local timeNow = os.time(os.date("*t"))
-	local timeRemaining = os.time(os.date("*t", mp.get_property("playtime-remaining")))
-	local timeUp = timeNow + timeRemaining
+	local timeNow = os.time()
+	local elapsed = mp.get_property_number("time-pos")
+	local duration = mp.get_property_number("duration")
 	-- set `largeImageKey` and `largeImageText`
 	local largeImageKey = "mpv"
 	local largeImageText = "mpv Media Player"
@@ -308,15 +287,7 @@ local function main()
 			if string.len(url) < 128 then
 				largeImageText = url
 			end
-			if o.anime_scraping == "yes" and (string.match(url, "%.mkv$") or string.match(url, "%.mp4$") or string.match(url, "%.avi$") or string.match(url, "%.webm$")) then
-				local encodedFilename = lastAnimeTitle or url:match("([^/]+)$")
-
-				if encodedFilename ~= lastAnimeTitle then
-					urlDecodedFilename = urlDecode(encodedFilename)
-
-					lastAnimeTitle = extractAnimeInfo(urlDecodedFilename).title
-				end
-			end
+			-- Anime scraping for streams disabled, as focus is on folder/filename parsing
 		end
 		-- checking site: YouTube, Crunchyroll, SoundCloud, LISTEN.moe
 		if string.match(url, "www.youtube.com/watch%?v=([a-zA-Z0-9-_]+)&?.*$") ~= nil or string.match(url, "youtu.be/([a-zA-Z0-9-_]+)&?.*$") ~= nil then
@@ -334,37 +305,55 @@ local function main()
 		end
 	end
 	if o.anime_scraping == "yes" then
-		-- Set Cover as Anime Poster if title can be extracted from filename
+		-- Force anime detection and visible debug output
+		msg.warn("[mpv_discordRPC] ===== STARTING ANIME DETECTION =====")
+		local path = mp.get_property("path")
+		msg.warn("[mpv_discordRPC] Folder path: " .. tostring(path))
+		local filename = urlDecodedFilename or (path and path:match("([^/\\]+)$") or "")
+		msg.warn("[mpv_discordRPC] Filename: " .. tostring(filename))
+		-- Extract anime title from parent folder (folder cleaner and anime lookup label)
+		local animeTitleFromFolder = extractAnimeTitleFromFolder(path)
+		msg.warn("[mpv_discordRPC] Cleaned anime name: " .. tostring(animeTitleFromFolder))
+		-- Extract episode from filename (episode extraction label)
+		local episodeFromFilename = extractEpisodeFromFilename(filename)
+		msg.warn("[mpv_discordRPC] Episode info: " .. tostring(episodeFromFilename))
 		local animeData = nil
-		local animeInfo = extractAnimeInfo(urlDecodedFilename or details)
-		if animeInfo and animeInfo.title then
-			animeData = getAnimeData(animeInfo.title)
+		if animeTitleFromFolder then
+			msg.warn("[mpv_discordRPC] Fetching anime data from Jikan API...")
+			animeData = getAnimeData(animeTitleFromFolder)
+			msg.warn("[mpv_discordRPC] API data fetched: " .. (animeData and "YES - " .. (animeData.title or "Unknown") or "NO"))
+		else
+			msg.warn("[mpv_discordRPC] No anime title extracted from folder")
 		end
-		if animeInfo and animeData and animeData.images then
+		if animeData and animeData.images then
 			largeImageKey = animeData.images.webp.large_image_url or animeData.images.jpg.large_image_url
 			largeImageText = animeData.title_english or animeData.title
-			details = string.format("%s - %s", animeInfo.title, animeInfo.episode)
-			if animeData.genres and animeData.genres[1] and animeData.genres[2] and animeData.genres[3] then
-				state = string.format("Genre: %s, %s, %s", animeData.genres[1].name, animeData.genres[2].name,
-					animeData.genres[3].name)
-			elseif animeData.genres and animeData.genres[1] and animeData.genres[2] then
-				state = string.format("Genre: %s, %s", animeData.genres[1].name, animeData.genres[2].name)
-			elseif animeData.genres and animeData.genres[1] then
-				state = string.format("Genre: %s", animeData.genres[1].name)
-			end
+			msg.warn("[mpv_discordRPC] Cover art set from API")
 		end
+		-- Set main details (top line) to official anime title (or cleaned folder if no API)
+		local newDetails = (animeData and (animeData.title_english or animeData.title)) or animeTitleFromFolder or details
+		msg.warn("[mpv_discordRPC] Details set to: " .. tostring(newDetails))
+		details = newDetails
+		-- Set state (bottom line) to episode from filename
+		local newState = episodeFromFilename or "No episode info"
+		msg.warn("[mpv_discordRPC] State set to: " .. tostring(newState))
+		state = newState
+		msg.warn("[mpv_discordRPC] ===== SENDING TO DISCORD =====")
 	end
 	-- set `presence`
 	local presence = {
 		state = state,
 		details = details,
-		-- startTimestamp = math.floor(startTime),
-		endTimestamp = math.floor(timeUp),
 		largeImageKey = largeImageKey,
 		largeImageText = largeImageText,
 		smallImageKey = smallImageKey,
 		smallImageText = smallImageText,
 	}
+	-- Set timestamps for playing media
+	if play and elapsed and duration then
+		presence.startTimestamp = math.floor(timeNow - elapsed)
+		presence.endTimestamp = math.floor(timeNow - elapsed + duration)
+	end
 	if url ~= nil and stream == nil then
 		presence.state = "(Loading)"
 		presence.startTimestamp = math.floor(startTime)
@@ -406,8 +395,8 @@ local function main()
 		-- run Rich Presence with pypresence
 		local todo = idle and "idle" or "not-idle"
 		local command = ('python "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s" "%s"'):format(pythonPath, todo,
-			presence.state, presence.details, math.floor(startTime), math.floor(timeUp), presence.largeImageKey,
-			presence.largeImageText, presence.smallImageKey, presence.smallImageText, o.periodic_timer)
+			presence.state, presence.details, presence.startTimestamp or "none", presence.endTimestamp or "none",
+			presence.largeImageKey, presence.largeImageText, presence.smallImageKey, presence.smallImageText, o.periodic_timer)
 		mp.register_event('shutdown', function()
 			todo = "shutdown"
 			command = ('python "%s" "%s"'):format(pythonPath, todo)
@@ -444,5 +433,10 @@ mp.add_key_binding(o.key_toggle, "active-toggle", function()
 	end,
 	{ repeatable = false })
 
--- run `main` function
+-- Force update on file load
+mp.register_event("file-loaded", function()
+	main()
+end)
+
+-- run `main` function periodically
 mp.add_periodic_timer(o.periodic_timer, main)
