@@ -27,6 +27,7 @@ This project is a fork of [ujjwal-dev23/mpv-discordRPC](https://github.com/ujjwa
 
 **Bruuhim (Maintainer):** Performed major modifications and improvements, including:
 
+- **🔥 Universal Season Matching:** Automatically detects and displays correct seasons for ANY anime series (S2, S3, etc.) without manual configuration.
 - **Automatic Anime Title Detection:** Extracts and cleans anime titles from parent folder names for accurate API lookups.
 - **Episode Extraction:** Reliably parses episode numbers and titles from video filenames (e.g., "03 - Everyday Life Under Dangerous Circumstances").
 - **Enhanced Cover Art:** Improved fetching of official anime posters via Jikan API metadata, prioritizing anime-matched images.
@@ -34,6 +35,7 @@ This project is a fork of [ujjwal-dev23/mpv-discordRPC](https://github.com/ujjwa
 - **Stability Fixes:** Resolved Lua pattern matching errors and enhanced script reliability.
 
 **Changelog:**
+- v1.4.3: 🔥 Added Universal Season Matching - automatic season detection for ANY anime (2025).
 - v1.4.2: Lua pattern fixes, debug logging, improved anime detection (2023-2025).
 - v1.4.1: Original release by ujjwal-dev23 with initial anime scraping.
 - Initial: Based on cniw's plugin.
@@ -42,6 +44,7 @@ For feature requests or issues, please open a GitHub issue on this repository.
 
 ## Key Features
 
+- 🔥 **Universal Season Matching:** Automatically detects and displays the correct season (S2, S3, etc.) for ANY anime without manual configuration
 - Can fetch cover art for Music or Anime
 - Support for http streams in Rich Presence
 - Metadata tags (Title, Artist, Album, Genre)
@@ -50,6 +53,32 @@ For feature requests or issues, please open a GitHub issue on this repository.
 - Easy to use install script
 - Support for multiple rpc wrappers
 - Simple configuration file
+
+## 🔥 Universal Season Matching
+
+The script now features **bulletproof universal season matching** that works with ANY anime series automatically:
+
+### Supported Examples:
+- **KonoSuba S2** → Automatically detects "KonoSuba: God's Blessing on This Wonderful World! 2"
+- **Hibike! Euphonium S2** → Automatically detects "Sound! Euphonium 2"
+- **Attack on Titan S4** → Automatically detects "Attack on Titan: The Final Season"
+- **Re:Zero S2** → Automatically detects "Re:Zero - Starting Life in Another World Season 2"
+- **My Hero Academia S6** → Automatically detects "My Hero Academia Season 6"
+- **Demon Slayer S3** → Automatically detects "Demon Slayer: Kimetsu no Yaiba Swordsmith Village Arc"
+
+### How It Works:
+1. **Intelligent Filename Parsing:** Supports all naming conventions (dots, dashes, brackets, groups, etc.)
+2. **Season Detection:** Automatically extracts season information from filenames (S2, Season 2, 2nd Season, etc.)
+3. **API Matching:** Uses advanced scoring algorithms to find the exact season match
+4. **Fallback System:** Gracefully falls back to best available match if perfect match isn't found
+
+### Robust Filename Support:
+- `[Group] Anime Title - S02E03.mkv` ✅
+- `Anime Title Season 2 - 03.mkv` ✅
+- `Anime Title 2nd Season E03.mkv` ✅
+- `Anime Title S2 - Episode 03.mkv` ✅
+- `Anime.Title.S02.E03.1080p.mkv` ✅
+- Works with any fansub group naming convention
 
 ## How To Use
 
